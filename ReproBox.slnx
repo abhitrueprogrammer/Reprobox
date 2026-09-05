@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ReproBox.Cli/ReproBox.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ReproBox.Tests/ReproBox.Tests.csproj" />
+  </Folder>
+</Solution>
