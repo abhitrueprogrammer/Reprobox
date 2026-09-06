@@ -5,8 +5,11 @@ internal record ProcessInfo(
     string? CommandLine,
     string? Executable,
     string? WorkingDirectory,
-    string? UserId,
+    uint? UserId,
     int? Threads,
     long? MemoryKb
-);
-
+)
+{
+    public string? State { get; init; }
+    public IReadOnlyList<string>? Environment { get; init; }
+}

@@ -1,11 +1,29 @@
 internal class IO
 {
-    public static int askPID()
+    public static bool TryParsePid(string? input, out int pid)
     {
-        Console.Write("Please enter a PID: ");
-        string input = Console.ReadLine();
-        int number = int.Parse(input);
-        return number;
+        return int.TryParse(input, out pid) && pid > 0;
+    }
+
+    public static int? AskPid()
+    {
+        while (true)
+        {
+            Console.Write("Please enter a PID: ");
+            string? input = Console.ReadLine();
+            if (input is null)
+                return null;
+
+
+            if (TryParsePid(input, out int pid))
+            {
+                return pid;
+            }
+
+            Console.WriteLine("Invalid input. Please enter a valid integer PID.");
+        }
+
+
     }
     public static string? ReadLink(string path)
     {
@@ -13,9 +31,9 @@ internal class IO
         {
             return File.ResolveLinkTarget(path, returnFinalTarget: false)?.FullName;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Console.WriteLine($"Error reading link {path}: {e.Message}");
+            Console.Error.WriteLine($"Error reading link {path}: {e.Message}");
             return null;
         }
     }
@@ -24,7 +42,7 @@ internal class IO
         Console.WriteLine($"Process Name: {processStatus.Name}");
         Console.WriteLine($"PID: {processStatus.Pid}");
         Console.WriteLine($"Parent PID: {processStatus.ParentPid}");
-        Console.WriteLine($"User ID: {processStatus.UserId}");
+        Console.WriteLine($"User ID: {UnixUser.GetUsername(processStatus.UserId)}");
         Console.WriteLine($"Threads: {processStatus.Threads}");
         Console.WriteLine($"Memory (KB): {processStatus.MemoryKb}");
         Console.WriteLine($"Command Line: {processStatus.CommandLine}");

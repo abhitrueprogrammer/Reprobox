@@ -17,9 +17,11 @@ static class UnixUser
     [DllImport("libc")]
     private static extern IntPtr getpwuid(uint uid);
 
-    public static string? GetUsername(uint uid)
+    public static string? GetUsername(uint? uid)
     {
-        IntPtr ptr = getpwuid(uid);
+        if (uid == null)
+            return null;
+        IntPtr ptr = getpwuid((uint)uid);
 
         if (ptr == IntPtr.Zero)
             return null;
