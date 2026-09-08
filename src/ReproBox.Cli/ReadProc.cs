@@ -13,38 +13,10 @@ internal static class ReadProc
         {
             CommandLine = GetProcessCommandLine(pid),
             Executable = GetProcessExecutable(pid),
-            WorkingDirectory = GetProcessCWD(pid),
-            State = ParseStatState(ReadOptionalFile($"/proc/{pid}/stat")),
-            Environment = ParseEnvironment(ReadOptionalFile($"/proc/{pid}/environ"))
+            WorkingDirectory = GetProcessCWD(pid)
         };
 
         return processStatus;
-    }
-
-    internal static string? ParseStatState(string? stat)
-    {
-        // comm is parenthesized and may itself contain spaces or parentheses.
-        int end = stat?.LastIndexOf(')') ?? -1;
-        if (end < 0)
-            return null;
-        return stat![(end + 1)..].Split((char[]?)null,
-            StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-    }
-
-    internal static IReadOnlyList<string>? ParseEnvironment(string? environment) =>
-        environment?.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-
-    private static string? ReadOptionalFile(string path)
-    {
-        try
-        {
-            return File.ReadAllText(path);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            Console.Error.WriteLine($"Error reading {path}: {e.Message}");
-            return null;
-        }
     }
 
     private static string? GetProcessCWD(int pid) => IO.ReadLink($"/proc/{pid}/cwd");

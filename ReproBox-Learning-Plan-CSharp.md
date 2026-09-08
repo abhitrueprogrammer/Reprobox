@@ -93,11 +93,9 @@ Read:
 
 ```text
 /proc/<pid>/status
-/proc/<pid>/stat
 /proc/<pid>/cmdline
 /proc/<pid>/exe
 /proc/<pid>/cwd
-/proc/<pid>/environ
 ```
 
 Display:
@@ -116,7 +114,7 @@ memory usage
 
 Important:
 
-* `cmdline` and `environ` are NUL-separated.
+* `cmdline` is NUL-separated.
 
 * Processes may disappear while you are reading `/proc`, so handle missing files gracefully.
 

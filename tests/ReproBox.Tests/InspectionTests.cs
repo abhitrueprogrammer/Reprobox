@@ -20,18 +20,4 @@ public class InspectionTests
         Assert.Equal(1000u, ReadProc.ParseLine(empty, line).UserId);
     }
 
-    [Fact]
-    public void StatHandlesSpacesAndParenthesesInName() =>
-        Assert.Equal("S", ReadProc.ParseStatState("42 (a tricky ) name) S 1 2 3"));
-
-    [Fact]
-    public void EnvironmentPreservesSpacesAndEquals() =>
-        Assert.Equal(new[] { "A=hello world", "B=x=y" }, ReadProc.ParseEnvironment("A=hello world\0B=x=y\0"));
-
-    [Fact]
-    public void MissingOptionalDataStaysMissing()
-    {
-        Assert.Null(ReadProc.ParseStatState(null));
-        Assert.Null(ReadProc.ParseEnvironment(null));
-    }
 }

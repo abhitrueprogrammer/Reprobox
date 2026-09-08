@@ -8,8 +8,4 @@ internal record ProcessInfo(
     uint? UserId,
     int? Threads,
     long? MemoryKb
-)
-{
-    public string? State { get; init; }
-    public IReadOnlyList<string>? Environment { get; init; }
-}
+);
