@@ -1,6 +1,11 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/ReproBox.TestProcess/ReproBox.TestProcess.csproj" />
+    <Name>testprocess</Name>
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/ReproBox.Cli/ReproBox.Cli.csproj" />
+    <Name>cli</Name>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ReproBox.Tests/ReproBox.Tests.csproj" />

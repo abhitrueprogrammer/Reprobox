@@ -1,114 +1,160 @@
-# ReproBox — Linux + C# Learning Plan
+# ReproBox — Project-Driven Linux + C# Roadmap
 
-Goal:
+## Goal
 
 > Build a Linux execution analysis and sandboxing tool in C# that can inspect processes, trace their behavior, isolate them, and eventually reproduce workloads.
 
-The learning progression is:
+The roadmap should teach Linux and C#, but **through one growing product**. A phase should not exist merely because a Linux primitive is interesting or because a C# feature is worth practicing.
 
+The core product progression is:
 ```text
-/proc
-  ↓
-processes
-  ↓
-file descriptors
-  ↓
-process trees
-  ↓
-process execution
-  ↓
-signals
-  ↓
-resource usage
-  ↓
-syscalls/files/network
-  ↓
-namespaces
-  ↓
-cgroups
-  ↓
-security
-  ↓
-eBPF
-  ↓
-dependency detection
-  ↓
-replay
-  ↓
-sandbox generation
+existing process/FD inspection
+        ↓
+reprobox run <command>
+        ↓
+ExecutionSession owns a workload
+        ↓
+process/descendant tracking
+        ↓
+live observations + resource monitoring
+        ↓
+files + network + syscalls
+        ↓
+versioned execution report
+        ↓
+isolation + resource limits + security
+        ↓
+dependency inference
+        ↓
+record/replay
+        ↓
+candidate sandbox generation
 ```
+
+## Project Integration Rule
+
+Before turning something into a milestone, ask:
+
+> If this feature disappeared, would a later ReproBox capability become worse or impossible?
+
+Examples:
+
+- **Descendant discovery:** core. Resource accounting, signaling, tracing, cgroups, and cleanup all need to know which processes belong to the workload.
+- **ASCII process-tree printing:** optional UI/debugging. The underlying relationship data matters; printing it does not have to be a milestone.
+- **File-descriptor discovery:** core. It later helps connect files, pipes, and socket inodes to workload processes.
+- **A syscall summary:** useful if it supports diagnosis or later seccomp/policy generation; decorative if it is only a pretty table.
+- **`Span<T>` or `Channel<T>`:** use them when ReproBox creates a real need, not merely because they appear on a language checklist.
+
+Every phase below therefore keeps the original **experiments, C# focus, and checkpoints**, but the implementation target is tied back to the ReproBox execution model.
+
+---
 
 ## Project Baseline
 
 Start deliberately small:
-
 ```text
 ReproBox/
+
 ├── src/ReproBox.Cli/
+
 ├── tests/ReproBox.Tests/
+
 └── LEARNING.md
 ```
 
-Use **.NET 10 / `net10.0`** and enable nullable reference types. Keep ReproBox primarily C#; use a tiny C/Rust helper only if a Linux primitive becomes awkward or unsafe to own from managed code.
+Use ****.NET 10 / `net10.0`**** and enable nullable reference types. Keep ReproBox primarily C#; use a tiny C/Rust helper only if a Linux primitive becomes awkward or unsafe to own from managed code.
 
 Do not add abstractions before you need them. Start with ordinary managed APIs, then cross into native Linux APIs only when the phase requires it.
+
+---
 
 ## C# Learning Track
 
 The C# progression should happen alongside the Linux progression:
-
 ```text
 File APIs + records
+
         ↓
+
 robust parsing
+
         ↓
+
 Span<T> / allocation awareness
+
         ↓
+
 async/await + CancellationToken
+
         ↓
+
 IAsyncEnumerable<T> / Channels<T>
+
         ↓
+
 System.Net + binary parsing
+
         ↓
+
 LibraryImport / P/Invoke
+
         ↓
+
 SafeHandle + native resource ownership
+
         ↓
+
 NativeAOT + shipping a Linux-native CLI
 ```
 
-**Rule:** do not use an advanced C# feature just because it is impressive. First solve the problem simply; introduce the feature when you can explain what problem it solves.
+****Rule:**** do not use an advanced C# feature just because it is impressive. First solve the problem simply; introduce the feature when you can explain what problem it solves.
 
 ---
 
-## Phase 1 — Process Inspection
+## Current State
+
+You have already completed the first two low-level building blocks. Keep their user-facing inspect command because it is useful for debugging, but from Phase 3 onward their main role is to become reusable internals for executions that ReproBox itself launches.
+
+---
+
+## Phase 1 — Process Inspection — **Completed**
+
+**Project role:** reusable process-observation primitive for later `ExecutionSession`s.
 
 Build:
-
 ```bash
 reprobox inspect <PID>
 ```
 
 Read:
-
 ```text
 /proc/<pid>/status
+
 /proc/<pid>/cmdline
+
 /proc/<pid>/exe
+
 /proc/<pid>/cwd
 ```
 
 Display:
-
 ```text
 PID
+
 PPID
+
 process name
+
 command line
+
 executable
+
 working directory
+
 user
+
 thread count
+
 memory usage
 ```
 
@@ -123,9 +169,13 @@ Important:
 ### C# Focus
 
 - Start with `File.ReadAllText`, `File.ReadAllBytes`, `Directory`, and `FileInfo` so the Linux behavior stays visible.
+
 - Model one observation as a small immutable `record` such as `ProcessSnapshot`.
+
 - Parse numeric fields with `TryParse` and model missing data explicitly instead of treating every disappearing `/proc` file as exceptional.
+
 - Once the parser is correct, rewrite the hot parsing paths with `ReadOnlySpan<char>` / `ReadOnlySpan<byte>` and compare readability and allocations.
+
 - Unit-test parsers using saved `/proc` samples rather than requiring a live PID in every test.
 
 ### Checkpoint
@@ -144,27 +194,30 @@ Be able to explain:
 
 ---
 
-## Phase 2 — File Descriptors
+## Phase 2 — File Descriptors — **Completed**
+
+**Project role:** reusable descriptor observation for files, pipes, terminals, and later socket attribution.
 
 Add:
-
 ```bash
 reprobox inspect <PID> --fds
 ```
 
 Enumerate:
-
 ```text
 /proc/<pid>/fd/
 ```
 
 Resolve entries such as:
-
 ```text
 0 → /dev/pts/2
+
 1 → /dev/pts/2
+
 2 → /dev/pts/2
+
 3 → /home/user/data.db
+
 4 → socket:[382911]
 ```
 
@@ -173,7 +226,6 @@ Write a small test program that opens a file and sleeps for 30 seconds.
 Inspect it while it is running.
 
 Also experiment with:
-
 ```bash
 echo hello > file.txt
 ```
@@ -181,9 +233,12 @@ echo hello > file.txt
 ### C# Focus
 
 - Use `Directory.EnumerateFileSystemEntries` and `File.ResolveLinkTarget` rather than loading everything eagerly.
+
 - Represent descriptors with a `FileDescriptor` record and a small `enum` for file/socket/pipe/other.
+
 - Practice iterator methods with `yield return` so descriptor discovery can stay lazy.
-- Learn the difference between **observing another process's fd** and **owning a native handle yourself**; do not close resources you do not own.
+
+- Learn the difference between ****observing another process's fd**** and ****owning a native handle yourself****; do not close resources you do not own.
 
 ### Checkpoint
 
@@ -203,30 +258,121 @@ Understand:
 
 ---
 
-## Phase 3 — Process Trees
+## Phase 3 — Execution Core / Process Runner
+
+**Project goal:** make ReproBox own a workload from start to finish. This is the central spine that the remaining observation, control, isolation, and replay features will attach to.
+
+Keep this phase deliberately narrow: launch one root process correctly, capture its result, and establish an `ExecutionSession`/`RunResult` model before adding more monitoring.
 
 Build:
+```bash
+reprobox run command args...
+```
 
+Use `System.Diagnostics.Process`.
+
+Record:
+```text
+PID
+
+start time
+
+end time
+
+exit code
+
+stdout
+
+stderr
+
+direct child
+
+observed descendants
+```
+
+Initially, descendant tracking may be best-effort because short-lived processes can disappear between `/proc` scans.
+
+Test with:
+```bash
+reprobox run sleep 10
+
+reprobox run ls /
+
+reprobox run python crash.py
+```
+
+### C# Focus
+
+- Learn `System.Diagnostics.Process` and `ProcessStartInfo` properly: `UseShellExecute`, argument handling, environment, working directory, and redirected streams.
+
+- Capture stdout/stderr asynchronously and use `WaitForExitAsync`.
+
+- Use `Task.WhenAll` where stdout, stderr, resource sampling, and process completion must progress concurrently.
+
+- Thread a `CancellationToken` through the runner instead of inventing custom cancellation flags.
+
+- Return a typed `RunResult` record rather than passing loosely related values around.
+
+### Checkpoint
+
+Be able to explain:
+```text
+shell
+
+  ↓
+
+ReproBox
+
+  ↓
+
+child process
+
+  ↓
+
+kernel
+```
+
+---
+
+## Phase 4 — Workload Process Discovery
+
+**Project goal:** determine which processes belong to the execution ReproBox launched. Do not build process-tree printing as the milestone; build descendant tracking that later subsystems can consume.
+
+The main product path is:
+```text
+ExecutionSession
+    └── root PID
+          ├── child PID
+          │     └── grandchild PID
+          └── child PID
+```
+
+An optional debug/view command may still exist later:
 ```bash
 reprobox tree <PID>
 ```
 
+but the project is complete for this phase when ReproBox can maintain the relationships internally.
+
 Construct parent/child relationships using PPIDs from `/proc`.
 
 Example:
-
 ```text
 node
+
 ├── sh
+
 │   └── git
+
 ├── esbuild
+
 └── worker
 ```
 
 Experiment with:
-
 ```bash
 npm run dev
+
 docker compose up
 ```
 
@@ -235,16 +381,19 @@ Compare the process trees.
 ### C# Focus
 
 - Build the tree with `Dictionary<int, ProcessNode>` and explicit parent/child links.
+
 - Implement traversal once imperatively, then compare a LINQ-based version so you understand what LINQ is hiding.
+
 - Practice recursion vs an explicit `Stack<T>` for tree traversal.
+
 - Keep parsing separate from tree construction so each part can be tested independently.
 
 ### Checkpoint
 
 Understand:
-
 ```text
 fork()
+
 exec()
 ```
 
@@ -252,149 +401,110 @@ and how they differ conceptually.
 
 ---
 
-## Phase 4 — Process Runner
+## Phase 5 — Integrate Process and FD Observations into the Execution
 
-Build:
+**Project goal:** stop treating Phases 1–2 as standalone inspection demos. Reuse them while an `ExecutionSession` is active.
 
-```bash
-reprobox run command args...
-```
-
-Use `System.Diagnostics.Process`.
-
-Record:
-
+For each observed workload process, ReproBox should be able to attach useful metadata such as:
 ```text
-PID
-start time
-end time
-exit code
-stdout
-stderr
-direct child
-observed descendants
+PID / PPID
+process name
+command line
+executable
+working directory
+user
+threads
+memory snapshot
+file descriptors
 ```
 
-Initially, descendant tracking may be best-effort because short-lived processes can disappear between `/proc` scans.
-
-Test with:
-
-```bash
-reprobox run sleep 10
-reprobox run ls /
-reprobox run python crash.py
+A useful internal shape might become:
+```text
+ExecutionSession
+  ├── ProcessObservation(root)
+  │     └── FileDescriptor[]
+  ├── ProcessObservation(child)
+  │     └── FileDescriptor[]
+  └── ...
 ```
+
+Do **not** rescan every expensive field at maximum frequency. Decide which values are effectively static for the run, which are sampled, and which are event-like.
+
+### Experiments
+
+Use your controlled `ReproBox.TestProcess` sample that opens regular files, creates a pipe, opens a socket, and sleeps. Run it through `reprobox run`, then verify that the same process/FD information you previously inspected manually can be attached to the active execution.
+
+Also test a workload that spawns a child so you can verify observations on more than the root PID.
 
 ### C# Focus
 
-- Learn `System.Diagnostics.Process` and `ProcessStartInfo` properly: `UseShellExecute`, argument handling, environment, working directory, and redirected streams.
-- Capture stdout/stderr asynchronously and use `WaitForExitAsync`.
-- Use `Task.WhenAll` where stdout, stderr, resource sampling, and process completion must progress concurrently.
-- Thread a `CancellationToken` through the runner instead of inventing custom cancellation flags.
-- Return a typed `RunResult` record rather than passing loosely related values around.
+- Reuse `ProcessSnapshot` / `FileDescriptor` models instead of duplicating parser output inside the runner.
+- Keep `/proc` parsing separate from orchestration so it remains unit-testable with saved samples.
+- Use dictionaries/sets keyed by PID to update observations without rebuilding unrelated state.
+- Make missing `/proc` data normal: a short-lived descendant may disappear between discovery and inspection.
+- Keep ownership clear: observing another process's FD is not the same thing as owning a native handle.
 
 ### Checkpoint
 
 Be able to explain:
 
-```text
-shell
-  ↓
-ReproBox
-  ↓
-child process
-  ↓
-kernel
-```
-
----
-
-## Phase 5 — Signals
-
-Add:
-
-```bash
-reprobox stop <run>
-reprobox interrupt <run>
-reprobox kill <run>
-```
-
-Map these roughly to:
-
-```text
-stop       → SIGTERM
-interrupt  → SIGINT
-kill       → SIGKILL
-```
-
-Use P/Invoke for `kill(pid, signal)`.
-
-Write a small program that handles `SIGTERM`.
-
-Compare it with `SIGKILL`.
-
-Later, learn process groups so ReproBox can signal an entire workload rather than only one PID.
-
-### C# Focus
-
-- Prefer modern source-generated P/Invoke with `[LibraryImport]` for small libc calls such as `kill`.
-- Represent signals with an enum rather than scattering integer constants through the code.
-- Learn `SetLastError`/`Marshal.GetLastPInvokeError()` and translate native failures into meaningful .NET errors.
-- Keep native interop behind a tiny `LinuxNative` boundary so most of ReproBox remains ordinary managed C#.
-
-### Checkpoint
-
-Understand:
-
-* why SIGKILL cannot be handled
-
-* graceful shutdown
-
-* why Ctrl+C works
-
-* process groups
-
-* what can happen to children when a parent exits
+- why `/proc` observations are snapshots rather than durable truth,
+- which process information can change during a run,
+- why a PID can disappear between two reads,
+- why descriptor observations are useful later for files, pipes, and sockets,
+- why ReproBox needs a workload model rather than just a list of printed facts.
 
 ---
 
 ## Phase 6 — Resource Monitoring
 
-Track:
+**Project goal:** measure the cost of the **whole execution**, using the process membership from Phase 4. The output must feed the run result/report rather than exist only as a standalone monitoring demo.
 
+Track:
 ```text
 CPU time
+
 wall-clock time
+
 RSS
+
 virtual memory
+
 threads
+
 context switches
+
 disk reads
+
 disk writes
 ```
 
 Read data from:
-
 ```text
 /proc/<pid>/stat
+
 /proc/<pid>/status
+
 /proc/<pid>/io
 ```
 
 Poll while the process is alive.
 
 Compare:
-
 ```bash
 reprobox run sha256sum huge-file.iso
+
 reprobox run sleep 10
 ```
 
 ### C# Focus
 
 - Use `PeriodicTimer`, `Stopwatch`, async loops, and `CancellationToken` for sampling.
+
 - Expose samples as `IAsyncEnumerable<ResourceSample>` so monitoring is naturally streaming instead of returning one giant list.
+
 - Learn value types and units: avoid mixing ticks, bytes, pages, milliseconds, and percentages as unlabelled `long`s.
+
 - Calculate peaks/averages incrementally instead of storing every sample forever.
 
 ### Checkpoint
@@ -413,10 +523,67 @@ Understand:
 
 ---
 
-## Phase 7 — Filesystem Observation
+## Phase 7 — Workload Control and Signals
+
+**Project goal:** make cancellation, timeout, graceful shutdown, and forced cleanup part of the `ExecutionSession` lifecycle. Signals matter because ReproBox owns the workload.
+
+Add:
+```bash
+reprobox stop <run>
+
+reprobox interrupt <run>
+
+reprobox kill <run>
+```
+
+Map these roughly to:
+```text
+stop       → SIGTERM
+
+interrupt  → SIGINT
+
+kill       → SIGKILL
+```
+
+Use P/Invoke for `kill(pid, signal)`.
+
+Write a small program that handles `SIGTERM`.
+
+Compare it with `SIGKILL`.
+
+Learn process groups here so ReproBox can signal and clean up the entire workload rather than only one PID. This is a product requirement, not an optional follow-up.
+
+### C# Focus
+
+- Prefer modern source-generated P/Invoke with `[LibraryImport]` for small libc calls such as `kill`.
+
+- Represent signals with an enum rather than scattering integer constants through the code.
+
+- Learn `SetLastError`/`Marshal.GetLastPInvokeError()` and translate native failures into meaningful .NET errors.
+
+- Keep native interop behind a tiny `LinuxNative` boundary so most of ReproBox remains ordinary managed C#.
+
+### Checkpoint
+
+Understand:
+
+* why SIGKILL cannot be handled
+
+* graceful shutdown
+
+* why Ctrl+C works
+
+* process groups
+
+* what can happen to children when a parent exits
+
+---
+
+## Phase 8 — Filesystem Observation
+
+**Project goal:** answer “what files did this execution reference, read, create, or modify?” and feed those observations into dependency inference and later filesystem policy generation.
 
 Build:
-
 ```bash
 reprobox trace-files command
 ```
@@ -424,7 +591,6 @@ reprobox trace-files command
 Start by using `strace`.
 
 Example:
-
 ```bash
 strace -f -e trace=%file -o trace.log command
 ```
@@ -436,23 +602,30 @@ Do not simply dump `strace` output.
 Build your own dependency model.
 
 Example:
-
 ```text
 Files referenced:
+
 READ/OPEN
+
   ./config.json
+
   /usr/lib/libssl.so
+
 CREATED/MODIFIED
+
   ./logs/server.log
 ```
 
 Later experiment with:
-
 ```text
 %file
+
 %desc
+
 %memory
+
 -y
+
 -yy
 ```
 
@@ -461,8 +634,11 @@ Do not assume `trace=%file` means every `read()` or `write()` is captured. It ma
 ### C# Focus
 
 - Treat `strace` as an external producer and parse its output into typed `TraceEvent` records.
+
 - Start with a simple parser; then compare regex parsing with a `ReadOnlySpan<char>`/state-machine parser.
+
 - Stream events instead of reading a giant trace file into memory.
+
 - If parsing and aggregation happen concurrently, introduce `Channel<TraceEvent>` and understand the backpressure problem it solves.
 
 ### Checkpoint
@@ -485,88 +661,38 @@ Understand:
 
 ---
 
-## Phase 8 — System Call Analysis
-
-Build:
-
-```bash
-reprobox syscalls command
-```
-
-Use:
-
-```bash
-strace -f -c command
-```
-
-Parse the result into your own format:
-
-```text
-openat     382
-read       811
-write      217
-mmap        74
-futex      928
-clone        8
-connect      3
-```
-
-Write Hello World in:
-
-```text
-C
-C#
-Python
-```
-
-Compare the syscall patterns.
-
-### C# Focus
-
-- Build a small aggregation model such as `Dictionary<string, SyscallStats>` instead of keeping presentation logic mixed with parsing.
-- Practice sorting/projection with LINQ after the raw parser is correct.
-- Keep raw trace events, aggregated statistics, and terminal formatting as separate types/layers.
-- Use BenchmarkDotNet only if you have a real parsing/performance question; do not benchmark for decoration.
-
-### Checkpoint
-
-Understand:
-
-* syscall vs normal function call
-
-* userspace vs kernel space
-
-* libc vs kernel
-
-* why `Console.WriteLine()` eventually causes syscalls
-
----
-
 ## Phase 9 — Networking
 
-Inspect:
+**Project goal:** associate socket state/endpoints with the workload and with specific observed processes where possible. This should reuse the FD model rather than become a separate networking toy.
 
+Inspect:
 ```text
 /proc/<pid>/net/tcp
+
 /proc/<pid>/net/tcp6
+
 /proc/<pid>/net/udp
+
 /proc/<pid>/net/udp6
 ```
 
 Map socket inode numbers back to:
-
 ```text
 /proc/<pid>/fd/*
 ```
 
 Display:
-
 ```text
 LISTEN
+
 ESTABLISHED
+
 UDP sockets
+
 local address
+
 remote address
+
 port
 ```
 
@@ -575,25 +701,29 @@ Important:
 This shows socket state, not necessarily historical connection events.
 
 Later use syscall tracing or eBPF for events like:
-
 ```text
 connect()
+
 accept()
+
 bind()
 ```
 
 Experiments:
-
 ```bash
 curl example.com
+
 python -m http.server 8000
 ```
 
 ### C# Focus
 
 - Use `IPAddress`, `BinaryPrimitives`, and span-based hexadecimal parsing to decode `/proc` socket tables.
+
 - Learn endianness by implementing the address conversion yourself before hiding it behind a helper.
+
 - Use `Dictionary`/`HashSet` to join socket inodes to process descriptors efficiently.
+
 - Write tiny test servers/clients with `System.Net.Sockets` so you control the socket states ReproBox is expected to observe.
 
 ### Checkpoint
@@ -616,23 +746,95 @@ Understand:
 
 ---
 
-## Milestone 1 — ReproBox v0.1
+## Phase 10 — System Call Analysis
+
+**Project goal:** collect syscall evidence that is useful for diagnosis and later security/policy work. Human-readable counts are allowed, but the main value is the structured observation model behind them.
+
+Build:
+```bash
+reprobox syscalls command
+```
+
+Use:
+```bash
+strace -f -c command
+```
+
+Parse the result into your own format:
+```text
+openat     382
+
+read       811
+
+write      217
+
+mmap        74
+
+futex      928
+
+clone        8
+
+connect      3
+```
+
+Write Hello World in:
+```text
+C
+
+C#
+
+Python
+```
+
+Compare the syscall patterns.
+
+### C# Focus
+
+- Build a small aggregation model such as `Dictionary<string, SyscallStats>` instead of keeping presentation logic mixed with parsing.
+
+- Practice sorting/projection with LINQ after the raw parser is correct.
+
+- Keep raw trace events, aggregated statistics, and terminal formatting as separate types/layers.
+
+- Use BenchmarkDotNet only if you have a real parsing/performance question; do not benchmark for decoration.
+
+### Checkpoint
+
+Understand:
+
+* syscall vs normal function call
+
+* userspace vs kernel space
+
+* libc vs kernel
+
+* why `Console.WriteLine()` eventually causes syscalls
+
+---
+
+## Milestone 1 — ReproBox v0.1: Execution Analyzer
+
+At this point, `reprobox run` should be the unifying command. The process tree, resources, files, sockets, and syscall information should all be properties of the same execution rather than unrelated commands.
 
 At this point:
-
 ```bash
 reprobox run npm test
 ```
 
 should report roughly:
-
 ```text
 exit status
+
 process tree
+
 CPU usage
+
 memory usage
+
 filesystem activity
+
 socket activity
+
 syscall summary
 ```
 
@@ -642,22 +844,97 @@ This alone is already a useful tool.
 
 ---
 
-## Phase 10 — Namespaces
+## Phase 11 — Versioned Execution Reports
+
+**Project goal:** turn one observed execution into a durable, machine-readable ReproBox artifact that later phases can compare, learn from, replay, and convert into policy.
+
+Build toward:
+```bash
+reprobox run --report run.json npm test
+```
+
+Store at least:
+```text
+schema version
+command
+arguments
+working directory
+start/end/duration
+exit status
+process observations
+resource summary
+filesystem observations
+network observations
+syscall summary/observations
+```
+
+Example shape:
+```json
+{
+  "schemaVersion": 1,
+  "command": "npm",
+  "arguments": ["test"],
+  "workingDirectory": "/home/user/project",
+  "exitCode": 0,
+  "durationMs": 4812,
+  "processes": [],
+  "resources": {},
+  "files": [],
+  "network": [],
+  "syscalls": {}
+}
+```
+
+Do not serialize every internal object automatically just because it exists. Treat the report schema as an API that will need compatibility over time.
+
+### Experiments
+
+- Run the same deterministic sample twice and compare reports.
+- Run `sleep 2` and verify that irrelevant observation sections stay small rather than filling with noise.
+- Run a crashing process and verify the report is still finalized with partial observations and the failure/exit state.
+- Interrupt a workload and ensure the report distinguishes normal exit from ReproBox-initiated termination.
+
+### C# Focus
+
+- Use `System.Text.Json` with an explicit schema/version field.
+- Keep internal domain models separate from persisted DTO/schema models if they begin to diverge.
+- Prefer immutable report data after finalization.
+- Stream large event sections when necessary instead of building unbounded strings.
+- Treat serialization compatibility as a real design concern, not just `JsonSerializer.Serialize(result)`.
+
+### Checkpoint
+
+Understand:
+
+- snapshot/event data vs final summary data,
+- internal domain model vs persisted file format,
+- why schema versioning matters,
+- partial reports after failures/interruption,
+- which observations are facts and which are later inferences.
+
+---
+
+## Phase 12 — Namespaces
+
+**Project goal:** run the same `ExecutionSession` pipeline inside an isolated view of the system. Isolation should wrap the existing execution path, not fork ReproBox into a second architecture.
 
 Before implementing anything, experiment manually with:
-
 ```bash
 unshare
+
 nsenter
 ```
 
 Learn namespaces one at a time:
-
 ```text
 UTS
+
 PID
+
 mount
+
 network
+
 user
 ```
 
@@ -666,7 +943,6 @@ Do not immediately build all namespace logic directly inside the main C# process
 Start by making ReproBox invoke existing namespace tools.
 
 Later, if needed, create a tiny native helper such as:
-
 ```text
 reprobox-init
 ```
@@ -678,8 +954,11 @@ ReproBox itself can remain C#.
 ### C# Focus
 
 - Initially invoke `unshare`/`nsenter` with `Process`; keep the managed orchestration code simple while learning namespace semantics.
+
 - Guard Linux-only code with `OperatingSystem.IsLinux()` and keep platform-specific code isolated.
+
 - If you later call namespace APIs directly, use `[LibraryImport]` and learn native struct/constants carefully rather than copying signatures blindly.
+
 - If namespace file descriptors become long-lived resources, introduce `SafeHandle` instead of managing raw `int` handles ad hoc.
 
 ### Checkpoint
@@ -692,39 +971,49 @@ Also understand why PID namespaces behave differently from something simple like
 
 ---
 
-## Phase 11 — Filesystem Isolation
+## Phase 13 — Filesystem Isolation
+
+**Project goal:** control the filesystem visible to the workload while keeping the same observation/reporting model.
 
 Build toward:
-
 ```bash
 reprobox run --root ./sandbox command
 ```
 
 Experiment manually with:
-
 ```text
 mount namespaces
+
 bind mounts
+
 tmpfs
+
 chroot
+
 pivot_root
+
 OverlayFS
 ```
 
 Target architecture:
-
 ```text
 base filesystem
-      +
+
+      \+
+
 writable layer
+
       ↓
+
 isolated filesystem
 ```
 
 ### C# Focus
 
 - Practice deterministic cleanup with `try/finally`, `IDisposable`, and eventually `SafeHandle` for resources ReproBox actually owns.
+
 - Keep path normalization/validation explicit; filesystem isolation code should not rely on string concatenation scattered through the project.
+
 - If you P/Invoke `mount`/`umount2`, keep the unsafe/native boundary tiny and test the high-level mount plan separately from execution.
 
 ### Checkpoint
@@ -733,21 +1022,25 @@ Understand how container filesystems work conceptually.
 
 ---
 
-## Phase 12 — cgroups v2
+## Phase 14 — cgroups v2
+
+**Project goal:** apply resource limits to the workload as a unit, using the same lifecycle/cleanup model already built for executions.
 
 Add:
-
 ```bash
 reprobox run --memory 512M command
+
 reprobox run --cpu 0.5 command
 ```
 
 Learn:
-
 ```text
 /sys/fs/cgroup/
+
 memory.max
+
 cpu.max
+
 cgroup.procs
 ```
 
@@ -756,7 +1049,6 @@ Do not assume your process can write anywhere under `/sys/fs/cgroup`.
 Learn about cgroup delegation.
 
 Write a memory-eater test program:
-
 ```bash
 reprobox run --memory 100M ./memory-eater
 ```
@@ -766,8 +1058,11 @@ Observe what happens when the process exceeds the limit.
 ### C# Focus
 
 - Model limits as typed values (`MemoryLimit`, `CpuQuota`) instead of raw strings passed directly into cgroup files.
+
 - Build a small cgroup lifecycle object that creates, configures, attaches, and cleans up a delegated cgroup.
+
 - Use async file APIs only where they actually help; tiny control-file writes do not need artificial complexity.
+
 - Make cleanup idempotent so failed runs do not leave stale cgroups behind.
 
 ### Checkpoint
@@ -780,10 +1075,11 @@ Understand:
 
 ---
 
-## Phase 13 — Network Isolation
+## Phase 15 — Network Isolation
+
+**Project goal:** move from observing network use to controlling it, first with simple network isolation and only later with finer-grained policy.
 
 Build:
-
 ```bash
 reprobox run --no-network command
 ```
@@ -791,25 +1087,26 @@ reprobox run --no-network command
 Start with a network namespace.
 
 Then experiment with:
-
 ```text
 veth pairs
+
 IP addresses
+
 routing
 ```
 
 Initially use:
-
 ```bash
 ip
+
 ip link
+
 ip netns
 ```
 
 rather than writing raw netlink code.
 
 Later consider:
-
 ```bash
 reprobox run --allow example.com:443 command
 ```
@@ -817,33 +1114,38 @@ reprobox run --allow example.com:443 command
 ### C# Focus
 
 - Build a reusable external-command runner for `ip` operations rather than duplicating `ProcessStartInfo` logic.
+
 - Represent network setup as typed steps/configuration before executing shell commands.
+
 - Use `System.Net` types for addresses/prefixes instead of passing unvalidated strings everywhere.
+
 - If a native helper is introduced, consider a Unix-domain socket for structured IPC between C# and the helper.
 
 ---
 
-## Phase 14 — Linux Security
+## Phase 16 — Linux Security
+
+**Project goal:** reduce privileges and restrict behavior based on explicit policy. The earlier syscall/filesystem observations now provide evidence for what the workload may need.
 
 Study these separately:
-
 ```text
 Linux capabilities
+
 no_new_privs
+
 seccomp
+
 Landlock
 ```
 
 Do not add them all at once.
 
 First:
-
 ```text
 inspect capabilities
 ```
 
 Then:
-
 ```text
 drop capabilities
 ```
@@ -851,7 +1153,6 @@ drop capabilities
 Then add seccomp restrictions.
 
 Example:
-
 ```bash
 reprobox run --deny-syscall execve program
 ```
@@ -863,24 +1164,31 @@ If using libseccomp from C#, prefer non-variadic APIs that are easier to P/Invok
 ### C# Focus
 
 - This is the main native-interop phase: learn `[StructLayout]`, `[Flags]` enums, `[LibraryImport]`, `SafeHandle`, and correct ownership rules.
+
 - Prefer fixed/non-variadic libseccomp APIs that map safely to P/Invoke.
-- Keep the **policy compiler** pure C# and unit-testable; only the final enforcement adapter should touch native APIs.
+
+- Keep the ****policy compiler**** pure C# and unit-testable; only the final enforcement adapter should touch native APIs.
+
 - Avoid `unsafe` code unless a specific API requires it. If you use it, document exactly why managed code was insufficient.
 
 ### Checkpoint
 
 Understand the difference between:
-
 ```text
 isolation
+
 resource limiting
+
 privilege reduction
+
 syscall filtering
 ```
 
 ---
 
-## Phase 15 — eBPF
+## Phase 17 — eBPF (Optional Observation Upgrade)
+
+**Project role:** replace or complement earlier observation backends only where eBPF gives a concrete advantage. Keep ReproBox’s higher-level event model stable so the backend can change without rewriting the product.
 
 Do not start here.
 
@@ -889,51 +1197,65 @@ Only use eBPF once you already understand the behavior you want to observe.
 Start with `bpftrace`.
 
 Trace:
-
 ```text
 execve
+
 openat
+
 connect
 ```
 
 Conceptually:
-
 ```text
 userspace loader
+
      ↓
+
 eBPF program
+
      ↓
+
 kernel verifier
+
      ↓
+
 kernel event
+
      ↓
+
 eBPF executes
+
      ↓
+
 event returned to userspace
 ```
 
 Replace earlier tracing mechanisms only where eBPF genuinely gives you something better.
 
 Examples:
-
 ```text
 lower overhead
+
 system-wide observation
+
 better event visibility
 ```
 
 ### C# Focus
 
 - Consume `bpftrace` output as an async event stream using `IAsyncEnumerable<T>` or `Channel<T>`.
+
 - Design for bursts: kernel events may arrive faster than the UI/reporting side can process them, so understand buffering and backpressure.
+
 - If you later replace `bpftrace` with a native eBPF loader, keep the loader behind a narrow IPC/native boundary and preserve the same C# event model.
 
 ---
 
-## Phase 16 — Dependency Detection
+## Phase 18 — Dependency Detection
+
+**Project goal:** turn the structured execution evidence collected so far into a dependency model. Preserve the distinction between observed facts and inferred requirements.
 
 Build:
-
 ```bash
 reprobox learn ./server
 ```
@@ -941,23 +1263,36 @@ reprobox learn ./server
 Aggregate everything collected so far.
 
 Example:
-
 ```text
 FILES
+
 Read:
+
   ./config/*
+
   /usr/lib/**
+
 Write:
+
   ./logs/*
+
 ENVIRONMENT SUPPLIED
+
   DATABASE_URL
+
   REDIS_URL
+
 NETWORK
+
   postgres:5432
+
   api.example.com:443
+
 RESOURCES
+
   Peak memory: 380 MB
-  CPU: ~1 core
+
+  CPU: \~1 core
 ```
 
 Important:
@@ -965,7 +1300,6 @@ Important:
 Do not claim an environment variable was actually used just because it existed in the environment.
 
 Call it:
-
 ```text
 Environment supplied
 ```
@@ -974,32 +1308,43 @@ unless you later add more precise instrumentation.
 
 ### C# Focus
 
-- This is a domain-modelling phase: represent **observed facts** separately from **inferred requirements**.
+- This is a domain-modelling phase: represent ****observed facts**** separately from ****inferred requirements****.
+
 - Use `HashSet<T>` for deduplication and explicit comparers for normalized paths/endpoints.
+
 - Use LINQ for aggregation only after you can explain the underlying set/group operations.
+
 - Keep the dependency model independent of where an observation came from (`/proc`, `strace`, eBPF, etc.).
 
 ---
 
-## Phase 17 — Record and Replay
+## Phase 19 — Record and Replay
+
+**Project goal:** use the versioned report/dependency model to reconstruct a sufficiently similar environment and rerun the workload.
 
 Build:
-
 ```bash
 reprobox record npm test
+
 reprobox replay run-821
 ```
 
 Store:
-
 ```text
 command
+
 arguments
+
 working directory
+
 environment
+
 filesystem dependencies
+
 network policy
+
 resource limits
+
 execution metadata
 ```
 
@@ -1014,50 +1359,66 @@ Aim for:
 ### C# Focus
 
 - Use `System.Text.Json` with an explicit schema version for recorded runs.
+
 - Learn streaming I/O, SHA-256 hashing, and content-addressed storage concepts instead of copying whole directory trees blindly.
+
 - Make replay data structures immutable where practical so a recorded run is not accidentally mutated during execution.
+
 - Treat compatibility/version migration of saved run files as a real API design problem.
 
 ---
 
-## Phase 18 — Automatic Sandbox Generation
+## Phase 20 — Automatic Sandbox Generation
+
+**Project goal:** generate a candidate policy from observed behavior, then enforce it with the namespace/cgroup/security machinery already built. Do not present an observed policy as guaranteed complete.
 
 Build:
-
 ```bash
 reprobox learn ./server
+
 reprobox generate-policy
 ```
 
 Generate:
-
 ```yaml
 filesystem:
+
   read:
-    - ./config/**
-    - /usr/lib/**
+
+    \- ./config/**
+
+    \- /usr/lib/**
+
   write:
-    - ./logs/**
+
+    \- ./logs/**
+
 network:
+
   allow:
-    - postgres:5432
+
+    \- postgres:5432
+
 resources:
+
   memory: 512MB
 ```
 
 Then:
-
 ```bash
 reprobox run --policy generated.yaml ./server
 ```
 
 Use:
-
 ```text
 namespaces
+
 cgroups
+
 capabilities
+
 seccomp
+
 filesystem restrictions
 ```
 
@@ -1076,8 +1437,11 @@ A different code path may require files, syscalls, or network access that the le
 ### C# Focus
 
 - Define the policy as typed C# domain objects first; YAML/JSON is only a serialization format.
+
 - Validate policies before enforcement and return structured validation errors rather than throwing on every bad field.
+
 - If you use YAML, keep the serializer behind an adapter so the policy model is not coupled to one package.
+
 - Finish by trying a trimmed/NativeAOT publish and fix reflection/dynamic-code assumptions that prevent a small Linux-native binary.
 
 ---
@@ -1085,22 +1449,35 @@ A different code path may require files, syscalls, or network access that the le
 ## C# Checkpoint by the Portfolio Release
 
 By the time you stop around Phases 1–12, you should be comfortable explaining and using:
-
 ```text
 records / immutable models
+
 File + Directory APIs
+
 robust parsing
+
 Span<T> / ReadOnlySpan<T>
+
 async / await
+
 Task.WhenAll
+
 CancellationToken
+
 PeriodicTimer
+
 IAsyncEnumerable<T>
+
 Channel<T> (only where streaming/backpressure needs it)
+
 System.Diagnostics.Process
+
 System.Net / IPAddress / sockets
+
 LibraryImport / P/Invoke basics
+
 SafeHandle and ownership concepts
+
 Linux-only platform boundaries
 ```
 
@@ -1110,56 +1487,74 @@ The goal is not to tick off language features. You should be able to point to a 
 
 ## Where to Stop
 
-You do not need all 18 phases.
+You do not need all 20 phases.
 
 A strong portfolio release is already:
-
 ```text
 ✓ run commands
+
 ✓ inspect processes
+
 ✓ capture process tree
+
 ✓ inspect file descriptors
+
 ✓ monitor CPU/RAM/I/O
+
 ✓ trace filesystem activity
+
 ✓ summarize syscalls
+
 ✓ inspect network sockets
+
 ✓ isolate with namespaces
+
 ✓ apply cgroup limits
+
 ✓ export execution reports
 ```
 
-That is roughly Phases 1–12.
+With the reordered project-driven roadmap, this is roughly the execution-analyzer + initial isolation/cgroup milestones (around Phases 1–14).
 
 ---
 
 ## How to Learn Instead of Copy-Pasting
 
 For every phase:
-
 ```text
 1. Read how the Linux primitive works.
+
 2. Use the existing Linux tool manually.
+
 3. Predict what will happen.
+
 4. Run an experiment.
+
 5. Explain the result in your own words.
+
 6. Design the ReproBox feature.
+
 7. Implement it yourself.
+
 8. Write tests.
+
 9. Break it deliberately.
+
 10. Debug it.
+
 11. Ask GPT about specific things you do not understand.
+
 12. Refactor only after it works: ask whether a C# feature (`Span<T>`, async streams, `SafeHandle`, etc.) solves a real problem you encountered.
+
 13. Write both the Linux concept **and the C# concept** you learned in `LEARNING.md`.
 ```
 
 Do not ask:
-
 ```text
 "Implement Phase 7 for me."
 ```
 
 Prefer:
-
 ```text
 "I expected openat to appear here but it doesn't. What assumption am I getting wrong?"
 ```
@@ -1170,33 +1565,33 @@ Prefer:
 
 Before implementing a feature, understand the Linux tool that exposes the same concept.
 
-| ReproBox feature | Explore first          |
+\| ReproBox feature | Explore first          |
 
-| ---------------- | ---------------------- |
+\| ---------------- | ---------------------- |
 
-| Processes        | `ps`, `/proc`          |
+\| Processes        | `ps`, `/proc`          |
 
-| Process tree     | `pstree`               |
+\| Process tree     | `pstree`               |
 
-| File descriptors | `lsof`, `/proc/*/fd`   |
+\| File descriptors | `lsof`, `/proc/*/fd`   |
 
-| Signals          | `kill`                 |
+\| Signals          | `kill`                 |
 
-| Syscalls         | `strace`               |
+\| Syscalls         | `strace`               |
 
-| Network          | `ss`                   |
+\| Network          | `ss`                   |
 
-| Memory           | `pmap`, `/proc/*/maps` |
+\| Memory           | `pmap`, `/proc/*/maps` |
 
-| Namespaces       | `unshare`, `nsenter`   |
+\| Namespaces       | `unshare`, `nsenter`   |
 
-| Mounts           | `mount`, `findmnt`     |
+\| Mounts           | `mount`, `findmnt`     |
 
-| cgroups          | `/sys/fs/cgroup`       |
+\| cgroups          | `/sys/fs/cgroup`       |
 
-| Capabilities     | `capsh`, `getcap`      |
+\| Capabilities     | `capsh`, `getcap`      |
 
-| eBPF             | `bpftrace`             |
+\| eBPF             | `bpftrace`             |
 
 The goal is not to rewrite these tools.
 
@@ -1204,24 +1599,87 @@ The goal is to understand the Linux primitives underneath them and combine them 
 
 ---
 
+## Testing Strategy for the Integrated Project
+
+Keep small deterministic sample workloads under `samples/` so each project feature can be verified against known behavior.
+
+### Process/descendant sample
+
+Create a process that spawns a child, optionally a grandchild, and waits. Use it to verify workload membership and cleanup.
+
+### Descriptor sample
+
+Keep your current sample that opens regular files, creates an anonymous pipe, opens a TCP listener/client, and remains alive. Use it to verify FD classification and socket attribution.
+
+### Resource samples
+
+Create controlled programs that separately:
+
+- burn CPU,
+- allocate a known amount of memory,
+- perform repeated disk writes/reads,
+- sleep/block.
+
+These make the Phase 6 comparisons meaningful and repeatable.
+
+### Signal sample
+
+Use a program that handles `SIGTERM`, prints/records that it received the signal, and exits gracefully. Compare that with `SIGKILL`.
+
+### Filesystem sample
+
+Use a program that reads one known input, creates one output, checks metadata on another path, and optionally memory-maps a file. Verify that the normalized ReproBox model matches the intended behavior.
+
+### Network sample
+
+Use a local client/server pair so expected LISTEN/ESTABLISHED endpoints are deterministic and do not depend on public internet behavior.
+
+The point of these programs is not to create more tutorials. They are **test fixtures for ReproBox**.
+
+---
+
 ## Final Project Goal
 
 A mature ReproBox should eventually let you do:
-
 ```bash
 reprobox learn npm test
 ```
 
 and answer:
-
 ```text
 What processes did it create?
+
 What files did it need?
+
 What network did it use?
+
 How much CPU/RAM did it consume?
+
 Which syscalls did it use?
+
 Can I reproduce this execution?
+
 Can I run it with fewer permissions?
 ```
 
 That is the project.
+
+---
+
+## Immediate Next Work
+
+You have completed Phases 1–2. The next implementation target is **Phase 3 — Execution Core / Process Runner**.
+
+Start with only:
+```text
+1. Parse command + arguments.
+2. Launch with Process / ProcessStartInfo.
+3. Record root PID and working directory.
+4. Capture stdout/stderr asynchronously.
+5. Record start/end time and exit code.
+6. Return a typed RunResult.
+```
+
+Then continue immediately into **Phase 4 — workload descendant discovery** and attach your existing process/FD inspection code in **Phase 5**.
+
+Do not build a standalone process-tree printer first. The relationship data should exist because the rest of ReproBox needs it; printing it can remain an optional debug view.

@@ -37,7 +37,7 @@ internal class IO
             return null;
         }
     }
-    public static void printProcessStatus(ProcessInfo processStatus)
+    public static void PrintProcessStatus(ProcessInfo processStatus)
     {
         Console.WriteLine($"Process Name: {processStatus.Name}");
         Console.WriteLine($"PID: {processStatus.Pid}");
