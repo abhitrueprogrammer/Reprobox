@@ -50,4 +50,16 @@ internal class IO
         Console.WriteLine($"Working Directory: {processStatus.WorkingDirectory}");
     }
 
+    public static void PrintRunResult(RunResult result)
+    {
+        Console.WriteLine($"PID: {result.Pid}");
+        Console.WriteLine($"Start Time: {result.StartTime}");
+        Console.WriteLine($"End Time: {result.EndTime}");
+        Console.WriteLine($"Exit Code: {result.ExitCode}");
+        Console.WriteLine("Standard Output:");
+        Console.WriteLine(result.Stdout);
+        Console.WriteLine("Standard Error:");
+        Console.WriteLine(result.Stderr);
+    }
+
 }
