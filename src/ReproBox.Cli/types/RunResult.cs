@@ -1,7 +1,16 @@
+public enum RunStatus
+{
+    Exited,
+    Failed,
+    Cancelled
+}
+
 public sealed record RunResult(
-    int Pid,
+    int? Pid,
     DateTimeOffset StartTime,
     DateTimeOffset EndTime,
     int ExitCode,
     string Stdout,
-    string Stderr);
+    string Stderr,
+    RunStatus Status
+);

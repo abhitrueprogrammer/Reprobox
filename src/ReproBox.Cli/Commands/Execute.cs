@@ -40,10 +40,8 @@ internal static class RunCommand
     public static async Task<RunResult> Execute(
         string command,
         string[] arguments,
-        CancellationToken ct = default
-        )
+        CancellationToken ct = default)
     {
-        // library used to run the process, providing abstraction over the platform-specific details of process execution
         using var process = new System.Diagnostics.Process();
         process.StartInfo.FileName = command;
         foreach (var argument in arguments)
@@ -54,90 +52,77 @@ internal static class RunCommand
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
 
-
-        var currentTime = DateTimeOffset.Now;
+        var startTime = DateTimeOffset.Now;
         try
         {
             process.Start();
-
         }
         catch (Win32Exception e)
         {
-            if (e.NativeErrorCode == 2)
-            {
 
-                return new RunResult(
-                    0,
-                    currentTime,
-                    DateTimeOffset.Now,
-                    127,
-                    "",
-                    e.Message
-                );
-            }
-            else
-            {
-                return new RunResult(
-                    0,
-                    currentTime,
-                    DateTimeOffset.Now,
-                    126,
-                    "",
-                    e.Message
-                );
-            }
+            int code = e.NativeErrorCode == 2 ? 127 : 126;
+            return new RunResult(
+                null,
+                startTime,
+                DateTimeOffset.Now,
+                code,
+                "",
+                "",
+                RunStatus.Failed);
         }
-        currentTime = DateTimeOffset.Now;
-        Task<String> readStd = process.StandardOutput.ReadToEndAsync();
-        Task<String> readErr = process.StandardError.ReadToEndAsync();
+
+        startTime = DateTimeOffset.Now;
+
+        // No ct token here, so partial output survives a cancel
+        Task<string> readStd = process.StandardOutput.ReadToEndAsync();
+        Task<string> readErr = process.StandardError.ReadToEndAsync();
+
         try
         {
+            try
+            {
+                await process.WaitForExitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                KillTree(process);
+                await process.WaitForExitAsync();
+            }
 
+            string standardOutput = await readStd;
+            string standardError = await readErr;
 
-
-
-
-            await Task.WhenAll(readStd, readErr, process.WaitForExitAsync(ct));
-
-            var standardOutput = await readStd;
-            var standardError = await readErr;
+            var status = ct.IsCancellationRequested
+                ? RunStatus.Cancelled
+                : RunStatus.Exited;
 
             return new RunResult(
                 process.Id,
-                currentTime,
+                startTime,
                 DateTimeOffset.Now,
                 process.ExitCode,
                 standardOutput,
-                standardError
-            );
-        }
-        catch (OperationCanceledException)
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-            await Task.WhenAll(readStd, readErr, process.WaitForExitAsync());
-
-            var standardOutput = await readStd;
-            var standardError = await readErr;
-            return new RunResult(
-                process.Id,
-                currentTime,
-                DateTimeOffset.Now,
-                137,
-                standardOutput,
-                standardError
-            );
+                standardError,
+                status);
         }
         finally
         {
+            KillTree(process); // safety net
+        }
+    }
+
+    private static void KillTree(System.Diagnostics.Process process)
+    {
+        try
+        {
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
             }
         }
-
+        catch (InvalidOperationException)
+        {
+            Console.WriteLine("Failed to kill process tree");
+        }
     }
-
 }
