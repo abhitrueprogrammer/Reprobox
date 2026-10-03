@@ -5,13 +5,16 @@ class Session
 {
     private string command;
     private string[] arguments;
+    private string cwd;
 
     public Session(string command,
-        string[] arguments
+        string[] arguments,
+        string cwd
 )
     {
         this.command = command;
         this.arguments = arguments;
+        this.cwd = cwd;
     }
 
     public Process CreateProcess()
@@ -25,6 +28,7 @@ class Session
         process.StartInfo.UseShellExecute = false;
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
+        process.StartInfo.WorkingDirectory = this.cwd;
         return process;
     }
 

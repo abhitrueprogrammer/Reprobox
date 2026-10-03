@@ -14,6 +14,10 @@ internal static class RunCommand
             Description = "Arguments passed to the program",
             Arity = ArgumentArity.ZeroOrMore
         };
+        var cwdArgument = new Option<string>("cwd")
+        {
+            Description = "Current working directory for the process"
+        };
 
         var command = new Command(
             "run",
@@ -21,14 +25,15 @@ internal static class RunCommand
 
         command.Arguments.Add(commandName);
         command.Arguments.Add(argumentsArgument);
+        command.Options.Add(cwdArgument);
 
         command.SetAction(async (parseResult, ct) =>
         {
             string command = parseResult.GetValue(commandName);
             string[] arguments = parseResult.GetValue(argumentsArgument)
                 ?? Array.Empty<string>();
-
-            var result = await Execute(command, arguments, ct);
+            string cwd = parseResult.GetValue(cwdArgument) ?? Environment.CurrentDirectory;
+            var result = await Execute(command, arguments, cwd, ct);
 
             IO.PrintRunResult(result);
 
@@ -40,10 +45,11 @@ internal static class RunCommand
     public static async Task<RunResult> Execute(
         string command,
         string[] arguments,
+        string cwd,
         CancellationToken ct = default)
     {
-        var session = new Session(command, arguments);
-        return await session.RunSession( ct);
+        var session = new Session(command, arguments, cwd);
+        return await session.RunSession(ct);
     }
 
 
