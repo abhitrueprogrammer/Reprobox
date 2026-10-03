@@ -10,6 +10,6 @@ internal class Program
         rootCommand.Subcommands.Add(InspectCommand.Create());
         rootCommand.Subcommands.Add(RunCommand.Create());
 
-        return rootCommand.Parse(args).Invoke();
+        return rootCommand.Parse(args).InvokeAsync().Result;
     }
 }

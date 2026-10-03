@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.ComponentModel;
 
 internal static class RunCommand
 {
@@ -21,13 +22,13 @@ internal static class RunCommand
         command.Arguments.Add(commandName);
         command.Arguments.Add(argumentsArgument);
 
-        command.SetAction(parseResult =>
+        command.SetAction(async (parseResult, ct) =>
         {
             string command = parseResult.GetValue(commandName);
             string[] arguments = parseResult.GetValue(argumentsArgument)
                 ?? Array.Empty<string>();
 
-            var result = Execute(command, arguments);
+            var result = await Execute(command, arguments, ct);
 
             IO.PrintRunResult(result);
 
@@ -36,59 +37,107 @@ internal static class RunCommand
         return command;
     }
 
-    public static RunResult Execute(
+    public static async Task<RunResult> Execute(
         string command,
-        string[] arguments
+        string[] arguments,
+        CancellationToken ct = default
         )
     {
-        var process = new System.Diagnostics.Process();
+        // library used to run the process, providing abstraction over the platform-specific details of process execution
+        using var process = new System.Diagnostics.Process();
         process.StartInfo.FileName = command;
-        process.StartInfo.Arguments = string.Join(" ", arguments);
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
         process.StartInfo.UseShellExecute = false;
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
-        var stdOutput = "";
-        var stdError = "";
-        process.OutputDataReceived += (sender, e) =>
-        {
-            if (e.Data != null)
-                stdOutput += e.Data + Environment.NewLine;
-        };
 
-        process.ErrorDataReceived += (sender, e) =>
-        {
-            if (e.Data != null)
-                stdError += e.Data + Environment.NewLine;
-        };
 
         var currentTime = DateTimeOffset.Now;
         try
         {
             process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            process.WaitForExit();
+
+        }
+        catch (Win32Exception e)
+        {
+            if (e.NativeErrorCode == 2)
+            {
+
+                return new RunResult(
+                    0,
+                    currentTime,
+                    DateTimeOffset.Now,
+                    127,
+                    "",
+                    e.Message
+                );
+            }
+            else
+            {
+                return new RunResult(
+                    0,
+                    currentTime,
+                    DateTimeOffset.Now,
+                    126,
+                    "",
+                    e.Message
+                );
+            }
+        }
+        currentTime = DateTimeOffset.Now;
+        Task<String> readStd = process.StandardOutput.ReadToEndAsync();
+        Task<String> readErr = process.StandardError.ReadToEndAsync();
+        try
+        {
+
+
+
+
+
+            await Task.WhenAll(readStd, readErr, process.WaitForExitAsync(ct));
+
+            var standardOutput = await readStd;
+            var standardError = await readErr;
+
             return new RunResult(
                 process.Id,
                 currentTime,
                 DateTimeOffset.Now,
                 process.ExitCode,
-                stdOutput,
-                stdError
+                standardOutput,
+                standardError
             );
         }
-        catch (Exception e)
+        catch (OperationCanceledException)
         {
-            Console.Error.WriteLine($"Error starting process: {e.Message}");
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            await Task.WhenAll(readStd, readErr, process.WaitForExitAsync());
+
+            var standardOutput = await readStd;
+            var standardError = await readErr;
             return new RunResult(
-                0,
+                process.Id,
                 currentTime,
                 DateTimeOffset.Now,
-                1,
-                "",
-                e.Message
+                137,
+                standardOutput,
+                standardError
             );
         }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+
     }
-    
+
 }
