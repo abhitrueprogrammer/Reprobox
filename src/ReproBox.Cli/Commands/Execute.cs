@@ -42,87 +42,9 @@ internal static class RunCommand
         string[] arguments,
         CancellationToken ct = default)
     {
-        using var process = new System.Diagnostics.Process();
-        process.StartInfo.FileName = command;
-        foreach (var argument in arguments)
-        {
-            process.StartInfo.ArgumentList.Add(argument);
-        }
-        process.StartInfo.UseShellExecute = false;
-        process.StartInfo.RedirectStandardOutput = true;
-        process.StartInfo.RedirectStandardError = true;
-
-        var startTime = DateTimeOffset.Now;
-        try
-        {
-            process.Start();
-        }
-        catch (Win32Exception e)
-        {
-
-            int code = e.NativeErrorCode == 2 ? 127 : 126;
-            return new RunResult(
-                null,
-                startTime,
-                DateTimeOffset.Now,
-                code,
-                "",
-                "",
-                RunStatus.Failed);
-        }
-
-        startTime = DateTimeOffset.Now;
-
-        // No ct token here, so partial output survives a cancel
-        Task<string> readStd = process.StandardOutput.ReadToEndAsync();
-        Task<string> readErr = process.StandardError.ReadToEndAsync();
-
-        try
-        {
-            try
-            {
-                await process.WaitForExitAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                KillTree(process);
-                await process.WaitForExitAsync();
-            }
-
-            string standardOutput = await readStd;
-            string standardError = await readErr;
-
-            var status = ct.IsCancellationRequested
-                ? RunStatus.Cancelled
-                : RunStatus.Exited;
-
-            return new RunResult(
-                process.Id,
-                startTime,
-                DateTimeOffset.Now,
-                process.ExitCode,
-                standardOutput,
-                standardError,
-                status);
-        }
-        finally
-        {
-            KillTree(process); // safety net
-        }
+        var session = new Session(command, arguments);
+        return await session.RunSession( ct);
     }
 
-    private static void KillTree(System.Diagnostics.Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            Console.WriteLine("Failed to kill process tree");
-        }
-    }
+
 }
