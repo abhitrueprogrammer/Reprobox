@@ -3,7 +3,6 @@ using System.Diagnostics;
 
 class Session
 {
-    private DateTimeOffset startTime;
     private string command;
     private string[] arguments;
 
@@ -44,7 +43,7 @@ class Session
             int code = e.NativeErrorCode == 2 ? 127 : 126;
             return new RunResult(
                 null,
-                startTime,
+                DateTimeOffset.Now,
                 DateTimeOffset.Now,
                 code,
                 "",
@@ -52,7 +51,8 @@ class Session
                 RunStatus.Failed);
         }
 
-        startTime = DateTimeOffset.Now;
+        DateTimeOffset startTime = DateTimeOffset.Now;
+
         // No ct token here, so partial output survives a cancel
         Task<string> readStd = process.StandardOutput.ReadToEndAsync();
         Task<string> readErr = process.StandardError.ReadToEndAsync();
@@ -102,7 +102,7 @@ class Session
         }
         catch (InvalidOperationException)
         {
-            Console.WriteLine("Failed to kill process tree");
+            // Failed to clean up
         }
     }
 }
