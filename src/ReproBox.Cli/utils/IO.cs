@@ -80,4 +80,30 @@ internal class IO
         return children ?? Array.Empty<int>();
     }
 
+    public static void PrintTree(int pid, Dictionary<int, int[]> processTree)
+    {
+        if (!processTree.ContainsKey(pid))
+        {
+            Console.WriteLine($"No process tree found for PID {pid}.");
+            return;
+        }
+
+        Console.WriteLine($"Process Tree for PID {pid}:");
+        PrintTreeRecursive(pid, 0, processTree);
+    }
+    public static void PrintTreeRecursive(int pid, int level, Dictionary<int, int[]> processTree)
+    {
+        Console.WriteLine($"{new string(' ', level * 2)}- PID: {pid}");
+        if (!processTree.ContainsKey(pid))
+            return;
+        var children = processTree[pid];
+        foreach (var childPid in children)
+        {
+
+            PrintTreeRecursive(childPid, level + 1, processTree);
+
+        }
+    }
+
+
 }

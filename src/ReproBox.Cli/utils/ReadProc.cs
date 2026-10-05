@@ -42,20 +42,48 @@ internal static class ReadProc
     }
     public static int[]? GetChildren(int pid)
     {
-        
+
         string filePath = $"/proc/{pid}/task";
         // Get all the thread IDs for the given process
-        var directories = new DirectoryInfo(filePath);
-        var threadIds = directories.GetDirectories().Select(d => d.Name)
-            .Where(name => int.TryParse(name, out _))
-            .Select(int.Parse)
-            .ToArray();
+        int[] threadIds;
+        try
+        {
+            var directories = new DirectoryInfo(filePath);
+            threadIds = directories.GetDirectories().Select(d => d.Name)
+               .Where(name => int.TryParse(name, out _))
+               .Select(int.Parse)
+               .ToArray();
 
-        int []? children = null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+
+        }
+
+        int[]? children = [];
         foreach (var threadId in threadIds)
         {
             string childrenFilePath = $"/proc/{pid}/task/{threadId}/children";
-            var threadChildren = IO.ReadChildren(childrenFilePath, pid);
+            int[]? threadChildren = null;
+            try
+            {
+                threadChildren = IO.ReadChildren(childrenFilePath, pid);
+
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+ 
             if (threadChildren != null)
             {
                 if (children == null)
@@ -131,7 +159,7 @@ internal static class ReadProc
         string filePath = $"/proc/{pid}/status";
 
         ProcessInfo processStatus =
-            new(null, null, null, null, null, null, null, null, null,null);
+            new(null, null, null, null, null, null, null, null, null, null);
 
         try
         {

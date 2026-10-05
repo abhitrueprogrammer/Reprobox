@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 class PollingObserver
 {
     private readonly TimeSpan _pollingInterval = TimeSpan.FromMilliseconds(10);
@@ -5,26 +7,70 @@ class PollingObserver
 
     public PollingObserver(int pid)
     {
-        var processDirectory = $"/proc/{pid}/task/";
 
         var children = ReadProc.GetChildren(pid);
 
         _processes[pid] = children;
     }
-    public void Observer()
+    public async Task<Dictionary<int, int[]>> ObserveAsync(CancellationToken cancellationToken)
     {
-        var timer = new PeriodicTimer(_pollingInterval);
+        PeriodicTimer timer = new(_pollingInterval);
+
         while (true)
         {
-            foreach (var pid in _processes.Keys.ToList())
+            if (cancellationToken.IsCancellationRequested)
             {
-                
-
-
+                break;
             }
+
+            UpdateProcesses();
+
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(cancellationToken))
+                {
+                    break;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                UpdateProcesses();
+
+                break;
+            }
+
+        }
+
+        return _processes;
+    }
+    public void UpdateProcesses()
+    {
+        foreach (var pid in _processes.Keys.ToList())
+        {
+
+            var currentChildren = ReadProc.GetChildren(pid);
+            if (currentChildren is null)
+            {
+                continue;
+            }
+
+            var previousChildren = _processes[pid];
+
+            var newChildren = currentChildren.Except(previousChildren).ToArray();
+            if (newChildren.Length > 0)
+            {
+                foreach (var newChild in newChildren)
+                {
+                    _processes[newChild] = [];
+                }
+            }
+
+            _processes[pid] = currentChildren;
+
         }
     }
 }
+
 
 // - `PeriodicTimer`, `Stopwatch`, async loops with cancellation.
 // - `IAsyncEnumerable<ResourceSample>` if streaming samples genuinely helps; a simple callback or accumulator is fine if it does not.

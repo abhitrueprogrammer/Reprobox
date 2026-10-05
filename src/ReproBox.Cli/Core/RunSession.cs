@@ -32,7 +32,7 @@ class Session
         return process;
     }
 
-    public async Task<RunResult> RunSession(CancellationToken ct = default)
+    public async Task<RunResult> RunSession(CancellationToken ct = default, Action<int>? onStarted = null)
     {
         using Process process = CreateProcess();
 
@@ -55,17 +55,22 @@ class Session
                 RunStatus.Failed);
         }
 
-        DateTimeOffset startTime = DateTimeOffset.Now;
 
+        DateTimeOffset startTime = DateTimeOffset.Now;
         // No ct token here, so partial output survives a cancel
         Task<string> readStd = process.StandardOutput.ReadToEndAsync();
         Task<string> readErr = process.StandardError.ReadToEndAsync();
 
         try
         {
+            if (onStarted != null)
+            {
+                onStarted(process.Id);
+            }
             try
             {
                 await process.WaitForExitAsync(ct);
+
             }
             catch (OperationCanceledException)
             {

@@ -49,8 +49,37 @@ internal static class RunCommand
         CancellationToken ct = default)
     {
         var session = new Session(command, arguments, cwd);
-        return await session.RunSession(ct);
-    }
 
+        using var ctPoller = new CancellationTokenSource();
+        Task<Dictionary<int, int[]>>? observerTask = null;
+        Dictionary<int, int[]>? observed = null;
+        RunResult runResult;
+        try
+        {
+            runResult = await session.RunSession(ct, pid =>
+           {
+               var observer = new PollingObserver(pid);
+               observerTask = observer.ObserveAsync(ctPoller.Token);
+
+           });
+
+        }
+        finally
+        {
+            ctPoller.Cancel();
+            if (observerTask is not null)
+            {
+                observed = await observerTask;
+            }
+
+        }
+        if (observed is not null)
+        {
+            IO.PrintTree(runResult.Pid ?? -1, observed);
+        }
+
+        return runResult;
+
+    }
 
 }
