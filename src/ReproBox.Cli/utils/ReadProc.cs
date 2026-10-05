@@ -23,15 +23,16 @@ internal static class ReadProc
 
     private static string? GetProcessExecutable(int pid) => IO.ReadLink($"/proc/{pid}/exe");
 
-    private static string? GetProcessCommandLine(int pid)
+    private static string[]? GetProcessCommandLine(int pid)
     {
         string filePath = $"/proc/{pid}/cmdline";
-        string? cmd = null;
+        string[]? cmd = null;
         try
         {
             cmd = File.ReadAllText(filePath)
                         .TrimEnd('\0')
-                        .Replace('\0', ' ');
+                        .Split('\0', StringSplitOptions.RemoveEmptyEntries);
+
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -39,7 +40,36 @@ internal static class ReadProc
         }
         return cmd;
     }
+    public static int[]? GetChildren(int pid)
+    {
+        
+        string filePath = $"/proc/{pid}/task";
+        // Get all the thread IDs for the given process
+        var directories = new DirectoryInfo(filePath);
+        var threadIds = directories.GetDirectories().Select(d => d.Name)
+            .Where(name => int.TryParse(name, out _))
+            .Select(int.Parse)
+            .ToArray();
 
+        int []? children = null;
+        foreach (var threadId in threadIds)
+        {
+            string childrenFilePath = $"/proc/{pid}/task/{threadId}/children";
+            var threadChildren = IO.ReadChildren(childrenFilePath, pid);
+            if (threadChildren != null)
+            {
+                if (children == null)
+                {
+                    children = threadChildren;
+                }
+                else
+                {
+                    children = children.Concat(threadChildren).ToArray();
+                }
+            }
+        }
+        return children;
+    }
     internal static ProcessInfo ParseLine(
         ProcessInfo status,
         string line)
@@ -101,7 +131,7 @@ internal static class ReadProc
         string filePath = $"/proc/{pid}/status";
 
         ProcessInfo processStatus =
-            new(null, null, null, null, null, null, null, null, null);
+            new(null, null, null, null, null, null, null, null, null,null);
 
         try
         {

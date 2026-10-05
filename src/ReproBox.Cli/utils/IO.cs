@@ -62,4 +62,22 @@ internal class IO
         Console.WriteLine(result.Stderr);
     }
 
+    public static int[] ReadChildren(string filePath, int pid)
+    {
+        int[]? children = null;
+        try
+        {
+            string content = File.ReadAllText(filePath).Trim();
+            if (!string.IsNullOrEmpty(content))
+            {
+                children = content.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Error reading children for PID {pid}: {e.Message}");
+        }
+        return children ?? Array.Empty<int>();
+    }
+
 }
