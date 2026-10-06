@@ -10,7 +10,7 @@ class PollingObserver
 
         var children = ReadProc.GetChildren(pid);
 
-        _processes[pid] = children;
+        _processes[pid] = children ?? [];
     }
     public async Task<Dictionary<int, int[]>> ObserveAsync(CancellationToken cancellationToken)
     {
@@ -65,8 +65,7 @@ class PollingObserver
                 }
             }
 
-            _processes[pid] = currentChildren;
-
+            _processes[pid] = _processes[pid].Concat(newChildren).ToArray();
         }
     }
 }

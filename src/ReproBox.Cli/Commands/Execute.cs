@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.ComponentModel;
 
 internal static class RunCommand
 {
@@ -29,7 +28,8 @@ internal static class RunCommand
 
         command.SetAction(async (parseResult, ct) =>
         {
-            string command = parseResult.GetValue(commandName);
+            string command = parseResult.GetValue(commandName)
+                ?? throw new InvalidOperationException("The command argument is required.");
             string[] arguments = parseResult.GetValue(argumentsArgument)
                 ?? Array.Empty<string>();
             string cwd = parseResult.GetValue(cwdArgument) ?? Environment.CurrentDirectory;
